@@ -1,0 +1,29 @@
+# Corpo próprio: 1 VPS = Ollama + Lexis Brain (24/7)
+# Não usa Gemini, OpenAI, HF, nem o PC do escritório.
+services:
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    volumes:
+      - ollama_data:/root/.ollama
+    # CPU only — funciona em VPS barato / Oracle Free ARM
+    # Para GPU NVIDIA no VPS, adicione deploy.resources.reservations.devices
+
+  brain:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8787:8787"
+    environment:
+      PORT: "8787"
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:3b}
+      BRAIN_API_KEY: ${BRAIN_API_KEY:-lexis-brain-change-me}
+    depends_on:
+      - ollama
+    volumes:
+      - ./skills:/app/skills:ro
+      - ./prompts:/app/prompts:ro
+
+volumes:
+  ollama_data:
