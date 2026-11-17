@@ -1,4 +1,5 @@
 import express from "express";
+import { authorizeBrainKey } from "./lib/auth.js";
 import cors from "cors";
 import fs from "node:fs";
 import path from "node:path";
@@ -8,20 +9,29 @@ import { getSkill, listSkills } from "./lib/skills.js";
 import { classifyStatusPrazo, extractFieldsRegex } from "./lib/rules.js";
 
 const app = express();
-app.use(cors());
+// Only explicitly trusted browser origins may read the API. Server-to-server
+// requests do not require CORS and must still present their key.
+app.use(cors({
+  origin(origin, callback) {
+    if (!origin) return callback(null, false);
+    return callback(null, config.allowedOrigins.includes(origin) ? origin : false);
+  },
+}));
 app.use(express.json({ limit: "4mb" }));
 
 function auth(req: express.Request, res: express.Response, next: express.NextFunction) {
-  if (!config.apiKey) return next();
-  const h = req.header("x-brain-key") || req.header("authorization")?.replace(/^Bearer\s+/i, "");
-  if (h !== config.apiKey) return res.status(401).json({ ok: false, error: "unauthorized" });
+  const key = req.header("x-brain-key") ?? /^Bearer[ \t]+(\S+)$/i.exec(req.header("authorization") ?? "")?.[1];
+  const decision = authorizeBrainKey(config.apiKey, key);
+  if (decision === "misconfigured") return res.status(503).json({ ok: false, error: "auth_not_configured" });
+  if (decision !== "authorized") return res.status(401).json({ ok: false, error: "unauthorized" });
   next();
 }
 
 app.get("/health", async (_req, res) => {
-  const llm = await pingLlm();
-  res.json({
-    ok: true,
+  const configured = Boolean(config.apiKey);
+  const llm = configured ? await pingLlm() : { ok: false, error: "auth_not_configured" };
+  res.status(configured ? 200 : 503).json({
+    ok: configured,
     service: "lexis-brain",
     version: "0.3.0",
     body: "self-hosted-vps",
@@ -81,7 +91,9 @@ app.post("/v1/classify-status", auth, async (req, res) => {
 });
 
 app.post("/v1/skill/:id", auth, async (req, res) => {
-  const skill = getSkill(req.params.id);
+  const id = req.params.id;
+  if (typeof id !== "string") return res.status(400).json({ ok: false, error: "skill inválida" });
+  const skill = getSkill(id);
   if (!skill) return res.status(404).json({ ok: false, error: "skill não encontrada" });
   const user = String(req.body?.input || req.body?.text || "");
   if (!user.trim()) return res.status(400).json({ ok: false, error: "input obrigatório" });
