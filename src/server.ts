@@ -20,9 +20,10 @@ app.use(cors({
 app.use(express.json({ limit: "4mb" }));
 
 function auth(req: express.Request, res: express.Response, next: express.NextFunction) {
-  if (!config.apiKey) return next();
-  const h = req.header("x-brain-key") || req.header("authorization")?.replace(/^Bearer\s+/i, "");
-  if (h !== config.apiKey) return res.status(401).json({ ok: false, error: "unauthorized" });
+  const key = req.header("x-brain-key") || req.header("authorization")?.replace(/^Bearer\\s+/i, "");
+  const decision = authorizeBrainKey(config.apiKey, key);
+  if (decision === "misconfigured") return res.status(503).json({ ok: false, error: "auth_not_configured" });
+  if (decision !== "authorized") return res.status(401).json({ ok: false, error: "unauthorized" });
   next();
 }
 
