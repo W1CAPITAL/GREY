@@ -20,7 +20,7 @@ app.use(cors({
 app.use(express.json({ limit: "4mb" }));
 
 function auth(req: express.Request, res: express.Response, next: express.NextFunction) {
-  const key = req.header("x-brain-key") || req.header("authorization")?.replace(/^Bearer\\s+/i, "");
+  const key = req.header("x-brain-key") ?? /^Bearer[ \t]+(\S+)$/i.exec(req.header("authorization") ?? "")?.[1];
   const decision = authorizeBrainKey(config.apiKey, key);
   if (decision === "misconfigured") return res.status(503).json({ ok: false, error: "auth_not_configured" });
   if (decision !== "authorized") return res.status(401).json({ ok: false, error: "unauthorized" });
@@ -91,7 +91,9 @@ app.post("/v1/classify-status", auth, async (req, res) => {
 });
 
 app.post("/v1/skill/:id", auth, async (req, res) => {
-  const skill = getSkill(req.params.id);
+  const id = req.params.id;
+  if (typeof id !== "string") return res.status(400).json({ ok: false, error: "skill inválida" });
+  const skill = getSkill(id);
   if (!skill) return res.status(404).json({ ok: false, error: "skill não encontrada" });
   const user = String(req.body?.input || req.body?.text || "");
   if (!user.trim()) return res.status(400).json({ ok: false, error: "input obrigatório" });
